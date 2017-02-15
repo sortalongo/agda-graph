@@ -6,11 +6,11 @@ open import Agda.Builtin.Equality using (_≡_)
 import Data.AVL
 open import Data.Bool using (Bool; not)
 open import Data.Fin as Fin using (Fin; zero; suc; #_; toℕ; fromℕ)
-open import Data.List using (List; _∷_; []; [_]; filter; map)
+open import Data.List as List using (List; _∷_; []; [_]; filter; map)
 open import Data.Nat as Nat using (ℕ; suc; pred; _≥_; _≟_)
-open import Data.Product as Product using (_×_; _,_)
+open import Data.Product as Product using (_×_; _,_; proj₁; proj₂)
 open import Data.String using (String)
-open import Function using (_∘_)
+open import Function as Fn using (_∘_; _$_)
 import Level as L
 import Relation.Binary
 open import Relation.Nullary.Decidable using (⌊_⌋)
@@ -75,8 +75,36 @@ private
   -- smaller ids. This allows searches for edges relating to nodes
   -- with large ids to be fast (though better, more complicated
   -- representations certainly exist).
-  module Impl (max : ℕ) where
+  module Impl where
     open import Data.Fin.Properties as FinP
     open import Relation.Binary using (module StrictTotalOrder)
-    open import Data.AVL Context
+    import Data.AVL
+    module AVL (max : ℕ) = Data.AVL Context
          (StrictTotalOrder.isStrictTotalOrder (FinP.strictTotalOrder max))
+    AVLGraph : Graph AVL.Tree
+    empty {{AVLGraph}} {n} = AVL.empty n
+    insert {{AVLGraph}} c g = {!!}
+    reinsert {{AVLGraph}} c g = {!!}
+    matchAny {{AVLGraph}} g = {!!}
+    match {{AVLGraph}} id g = {!!}
+    remove {{AVLGraph}} id g = {!!}
+
+    raisePair : ∀ {n} → Edge × Fin n → Edge × Fin (suc n)
+    raisePair p = Product.map Fn.id (Fin.raise 1) p
+    raiseContext : ∀ {n} → Context n → Context (suc n)
+    raiseContext {n} ctxt-n = ctxt-suc
+      where
+      open module Mctxt = Context ctxt-n
+      ctxt-suc : Context (suc n)
+      preds ctxt-suc = List.map raisePair preds
+      label ctxt-suc = label
+      succs ctxt-suc = List.map raisePair succs
+    raiseTree : ∀ {n} → AVL.Tree n → AVL.Tree (suc n)
+    raiseTree {n} t = t-suc
+      where
+      l = AVL.toList n t
+      raiseKV : ∀ {n} → AVL.KV n → AVL.KV (suc n)
+      raiseKV kv = Product.map (Fin.raise 1) raiseContext kv
+      l-suc = List.map raiseKV l
+      t-suc = AVL.fromList (suc n) l-suc
+
