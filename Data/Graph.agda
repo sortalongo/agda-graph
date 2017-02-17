@@ -7,6 +7,7 @@ import Data.AVL
 open import Data.Bool using (Bool; not)
 open import Data.Fin as Fin using (Fin; zero; suc; #_; toℕ; fromℕ)
 open import Data.List as List using (List; _∷_; []; [_]; filter; map)
+open import Data.Maybe using (Maybe; just; nothing)
 open import Data.Nat as Nat using (ℕ; suc; pred; _≥_; _≟_)
 open import Data.Product as Product using (_×_; _,_; proj₁; proj₂)
 open import Data.String using (String)
@@ -66,6 +67,22 @@ record Graph (G : ℕ → Set ℓ) : Set ℓ where
   ...          | ∅ = true
   ...          | _ & _ = false
 
+-- Mapping functions for contexts and graphs. Particularly useful when
+-- needing to move nodes and edges between graphs of different sizes.
+-- f : a transformation on the upper bound of node ids
+-- f-fin : a type-consistent transformation on the node ids themselves
+module Maps (f : ℕ → ℕ) (f-fin : ∀ {n} → Fin n → Fin (f n)) where
+  mapEdge : ∀ {n} → Edge × Fin n → Edge × Fin (f n)
+  mapEdge p = Product.map Fn.id f-fin p
+  mapContext : ∀ {n} {n-fin : Fin n} → Context n-fin → Context (f-fin n-fin)
+  mapContext {_} {n-fin} ctxt-n = ctxt-f
+    where
+    open Context ctxt-n
+    ctxt-f : Context (f-fin n-fin)
+    preds ctxt-f = List.map mapEdge preds
+    label ctxt-f = label
+    succs ctxt-f = List.map mapEdge succs
+
 open Graph {{...}} public
 
 private
@@ -81,30 +98,25 @@ private
     import Data.AVL
     module AVL (max : ℕ) = Data.AVL Context
          (StrictTotalOrder.isStrictTotalOrder (FinP.strictTotalOrder max))
+
+    module ImplMaps (f : ℕ → ℕ) (f-fin : ∀ {n} → Fin n → Fin (f n)) where
+      open Maps f f-fin
+      mapKV : ∀ {n} → AVL.KV n → AVL.KV (f n)
+      mapKV kv = Product.map f-fin mapContext kv
+      mapTree : ∀ {n} → AVL.Tree n → AVL.Tree (f n)
+      mapTree {n} t = t-f
+        where
+        l = AVL.toList n t
+        l-f = List.map mapKV l
+        t-f = AVL.fromList (f n) l-f
+
     AVLGraph : Graph AVL.Tree
     empty {{AVLGraph}} {n} = AVL.empty n
-    insert {{AVLGraph}} c g = {!!}
-    reinsert {{AVLGraph}} c g = {!!}
-    matchAny {{AVLGraph}} g = {!!}
+    insert {{AVLGraph}} {n} c g =
+      AVL.insert (suc n) (fromℕ n) c (ImplMaps.mapTree suc Fin.suc g)
+    reinsert {{AVLGraph}} {n} {id} c g = AVL.insert n id c g
+    matchAny {{AVLGraph}} {n} g with AVL.initLast n g
+    ...                            | just (g' , (_ , c)) = c & g'
+    ...                            | nothing = ∅
     match {{AVLGraph}} id g = {!!}
     remove {{AVLGraph}} id g = {!!}
-
-    raisePair : ∀ {n} → Edge × Fin n → Edge × Fin (suc n)
-    raisePair p = Product.map Fn.id (Fin.raise 1) p
-    raiseContext : ∀ {n} → Context n → Context (suc n)
-    raiseContext {n} ctxt-n = ctxt-suc
-      where
-      open module Mctxt = Context ctxt-n
-      ctxt-suc : Context (suc n)
-      preds ctxt-suc = List.map raisePair preds
-      label ctxt-suc = label
-      succs ctxt-suc = List.map raisePair succs
-    raiseTree : ∀ {n} → AVL.Tree n → AVL.Tree (suc n)
-    raiseTree {n} t = t-suc
-      where
-      l = AVL.toList n t
-      raiseKV : ∀ {n} → AVL.KV n → AVL.KV (suc n)
-      raiseKV kv = Product.map (Fin.raise 1) raiseContext kv
-      l-suc = List.map raiseKV l
-      t-suc = AVL.fromList (suc n) l-suc
-
