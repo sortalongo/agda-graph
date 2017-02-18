@@ -8,16 +8,13 @@ open import Data.Bool using (Bool; not)
 open import Data.Fin as Fin using (Fin; zero; suc; #_; toℕ; fromℕ)
 open import Data.List as List using (List; _∷_; []; [_]; filter; map)
 open import Data.Maybe using (Maybe; just; nothing)
-open import Data.Nat as Nat using (ℕ; suc; pred; _≥_; _≟_)
+open import Data.Nat as Nat using (ℕ; suc; pred; _≥_)
 open import Data.Product as Product using (_×_; _,_; proj₁; proj₂)
 open import Data.String using (String)
-open import Function as Fn using (_∘_; _$_)
+open import Function as Fn using (_∘_; _$_; case_of_)
 import Level as L
 import Relation.Binary
 open import Relation.Nullary.Decidable using (⌊_⌋)
-
-GraphT : Set (L.suc ℓ)
-GraphT =  Set ℓ → Set ℓ → ℕ → Set ℓ
 
 -- A Context is a node, identified by `id`, from a graph with at
 -- most `n` nodes. It includes its incoming and outgoing edges
@@ -66,6 +63,7 @@ record Graph (G : ℕ → Set ℓ) : Set ℓ where
   isEmpty g with matchAny g
   ...          | ∅ = true
   ...          | _ & _ = false
+open Graph {{...}} public
 
 -- Mapping functions for contexts and graphs. Particularly useful when
 -- needing to move nodes and edges between graphs of different sizes.
@@ -74,16 +72,16 @@ record Graph (G : ℕ → Set ℓ) : Set ℓ where
 module Maps (f : ℕ → ℕ) (f-fin : ∀ {n} → Fin n → Fin (f n)) where
   mapEdge : ∀ {n} → Edge × Fin n → Edge × Fin (f n)
   mapEdge p = Product.map Fn.id f-fin p
-  mapContext : ∀ {n} {n-fin : Fin n} → Context n-fin → Context (f-fin n-fin)
-  mapContext {_} {n-fin} ctxt-n = ctxt-f
+  mapContext : ∀ {n} {n-fin : Fin n} →
+               (Edge × Fin n → Edge × Fin (f n)) →
+               Context n-fin → Context (f-fin n-fin)
+  mapContext {_} {n-fin} f-edge ctxt-n = ctxt-f
     where
     open Context ctxt-n
     ctxt-f : Context (f-fin n-fin)
-    preds ctxt-f = List.map mapEdge preds
+    preds ctxt-f = List.map f-edge preds
     label ctxt-f = label
-    succs ctxt-f = List.map mapEdge succs
-
-open Graph {{...}} public
+    succs ctxt-f = List.map f-edge succs
 
 private
   -- Implements the Graph interface with AVL trees. Keeps contexts
@@ -102,7 +100,7 @@ private
     module ImplMaps (f : ℕ → ℕ) (f-fin : ∀ {n} → Fin n → Fin (f n)) where
       open Maps f f-fin
       mapKV : ∀ {n} → AVL.KV n → AVL.KV (f n)
-      mapKV kv = Product.map f-fin mapContext kv
+      mapKV kv = Product.map f-fin (mapContext mapEdge) kv
       mapTree : ∀ {n} → AVL.Tree n → AVL.Tree (f n)
       mapTree {n} t = t-f
         where
@@ -110,13 +108,28 @@ private
         l-f = List.map mapKV l
         t-f = AVL.fromList (f n) l-f
 
-    AVLGraph : Graph AVL.Tree
-    empty {{AVLGraph}} {n} = AVL.empty n
-    insert {{AVLGraph}} {n} c g =
-      AVL.insert (suc n) (fromℕ n) c (ImplMaps.mapTree suc Fin.suc g)
-    reinsert {{AVLGraph}} {n} {id} c g = AVL.insert n id c g
-    matchAny {{AVLGraph}} {n} g with AVL.initLast n g
-    ...                            | just (g' , (_ , c)) = c & g'
-    ...                            | nothing = ∅
-    match {{AVLGraph}} id g = {!!}
-    remove {{AVLGraph}} id g = {!!}
+    instance
+      AVLGraph : Graph AVL.Tree
+      empty {{AVLGraph}} {n} = AVL.empty n
+      insert {{AVLGraph}} {n} c g =
+        AVL.insert (suc n) (fromℕ n) c (ImplMaps.mapTree suc Fin.suc g)
+      reinsert {{AVLGraph}} {n} {id} c g = AVL.insert n id c g
+      matchAny {{AVLGraph}} {n} g with AVL.initLast n g
+      ...                            | nothing = ∅
+      ...                            | just (g' , (_ , c)) = c & g'
+      match {{AVLGraph}} {n} id g with AVL.initLast n g
+      ...   | nothing = ∅
+      ...   | just (g' , (id' , c)) with Fin.compare id id'
+      ...     | Fin.less _ _ = ∅
+      ...     | Fin.equal i = c & g'
+      ...     | Fin.greater id< id> = {!decomp!}
+        where
+        decomp : Decomp AVL.Tree n
+        decomp = case (match id g') of λ
+         { ∅ → ∅
+         ; (c-match & g-match) → {!
+         -- put stuff from c into c-match
+         -- put rest into c', which goes to g-match
+         -- return new g!}
+         }
+      remove {{AVLGraph}} id g = {!!}
