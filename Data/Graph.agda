@@ -108,6 +108,25 @@ private
         l-f = List.map mapKV l
         t-f = AVL.fromList (f n) l-f
 
+    {-# TERMINATING #-}
+    matchImpl : {n : ℕ} (a : Fin n) → AVL.Tree n → Decomp AVL.Tree n
+    matchImpl {n} id g with AVL.initLast n g
+    ...   | nothing = ∅
+    ...   | just (g' , (id' , c)) with Fin.compare id id'
+    ...     | Fin.less _ _ = ∅
+    ...     | Fin.equal i = c & g'
+    ...     | Fin.greater .id id↑ = decomp (matchImpl id g')
+      where
+      postulate includeContext : ∀ {n} {id1 id2 : Fin n} → Context id1 → Context id2 → Context id2
+      postulate includeGraph : ∀ {n} {id1 : Fin n} → Context id1 → AVL.Tree n → AVL.Tree n
+      decomp : Decomp AVL.Tree n → Decomp AVL.Tree n
+      decomp ∅ = ∅
+      decomp (_&_ {.n} {id-match} c-match g-match) = 
+       includeContext c c-match & includeGraph c g-match
+       -- put stuff from c into c-match
+       -- put rest into c', which goes to g-match
+       -- return new g
+
     instance
       AVLGraph : Graph AVL.Tree
       empty {{AVLGraph}} {n} = AVL.empty n
@@ -117,19 +136,5 @@ private
       matchAny {{AVLGraph}} {n} g with AVL.initLast n g
       ...                            | nothing = ∅
       ...                            | just (g' , (_ , c)) = c & g'
-      match {{AVLGraph}} {n} id g with AVL.initLast n g
-      ...   | nothing = ∅
-      ...   | just (g' , (id' , c)) with Fin.compare id id'
-      ...     | Fin.less _ _ = ∅
-      ...     | Fin.equal i = c & g'
-      ...     | Fin.greater id< id> = {!decomp!}
-        where
-        decomp : Decomp AVL.Tree n
-        decomp = case (match id g') of λ
-         { ∅ → ∅
-         ; (c-match & g-match) → {!
-         -- put stuff from c into c-match
-         -- put rest into c', which goes to g-match
-         -- return new g!}
-         }
+      match {{AVLGraph}} id g = matchImpl id g
       remove {{AVLGraph}} id g = {!!}
