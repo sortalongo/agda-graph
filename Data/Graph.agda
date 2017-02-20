@@ -6,8 +6,8 @@ open import Agda.Builtin.Equality using (_≡_)
 import Data.AVL
 open import Data.Bool using (Bool; not)
 open import Data.Fin as Fin using (Fin; zero; suc; #_; toℕ; fromℕ)
-open import Data.List as List using (List; _∷_; []; [_]; filter; map)
-open import Data.Maybe using (Maybe; just; nothing)
+open import Data.List as List using (List; _∷_; []; [_]; filter; map; _++_)
+open import Data.Maybe as Maybe using (Maybe; just; nothing)
 open import Data.Nat as Nat using (ℕ; suc; pred; _≥_)
 open import Data.Product as Product using (_×_; _,_; proj₁; proj₂)
 open import Data.String using (String)
@@ -92,10 +92,10 @@ private
   -- representations certainly exist).
   module Impl where
     open import Data.Fin.Properties as FinP
-    open import Relation.Binary using (module StrictTotalOrder)
+    open import Relation.Binary using (StrictTotalOrder; IsStrictTotalOrder)
     import Data.AVL
-    module AVL (max : ℕ) = Data.AVL Context
-         (StrictTotalOrder.isStrictTotalOrder (FinP.strictTotalOrder max))
+    module FinOrd (n : ℕ) = StrictTotalOrder (FinP.strictTotalOrder n)
+    module AVL (n : ℕ) = Data.AVL Context (FinOrd.isStrictTotalOrder n)
 
     module ImplMaps (f : ℕ → ℕ) (f-fin : ∀ {n} → Fin n → Fin (f n)) where
       open Maps f f-fin
@@ -108,25 +108,6 @@ private
         l-f = List.map mapKV l
         t-f = AVL.fromList (f n) l-f
 
-    {-# TERMINATING #-}
-    matchImpl : {n : ℕ} (a : Fin n) → AVL.Tree n → Decomp AVL.Tree n
-    matchImpl {n} id g with AVL.initLast n g
-    ...   | nothing = ∅
-    ...   | just (g' , (id' , c)) with Fin.compare id id'
-    ...     | Fin.less _ _ = ∅
-    ...     | Fin.equal i = c & g'
-    ...     | Fin.greater .id id↑ = decomp (matchImpl id g')
-      where
-      postulate includeContext : ∀ {n} {id1 id2 : Fin n} → Context id1 → Context id2 → Context id2
-      postulate includeGraph : ∀ {n} {id1 : Fin n} → Context id1 → AVL.Tree n → AVL.Tree n
-      decomp : Decomp AVL.Tree n → Decomp AVL.Tree n
-      decomp ∅ = ∅
-      decomp (_&_ {.n} {id-match} c-match g-match) = 
-       includeContext c c-match & includeGraph c g-match
-       -- put stuff from c into c-match
-       -- put rest into c', which goes to g-match
-       -- return new g
-
     instance
       AVLGraph : Graph AVL.Tree
       empty {{AVLGraph}} {n} = AVL.empty n
@@ -136,5 +117,46 @@ private
       matchAny {{AVLGraph}} {n} g with AVL.initLast n g
       ...                            | nothing = ∅
       ...                            | just (g' , (_ , c)) = c & g'
-      match {{AVLGraph}} id g = matchImpl id g
+      match {{AVLGraph}} {n} id g = matchImpl id g
+        where
+        module AVLn = AVL n
+        open Context
+        extractContext : (id : Fin n) → AVL.Tree n → Maybe (Context id)
+        extractContext id g = mergedC
+          where
+            open IsStrictTotalOrder (FinOrd.isStrictTotalOrder n) using (_<?_)
+            listG =  AVLn.toList g
+            filteredG = List.takeWhile (⌊_⌋ ∘ (_<?_ id) ∘ proj₁) listG
+            mergeContexts : {id₂ : Fin n} (c₁ : Context id) (c₂ : Context id₂)
+                          → Context id
+            mergeContexts c₁ c₂ = context preds-merged (label c₁) succs-merged
+              where
+              connectsC₁? : Edge × Fin n → Bool
+              connectsC₁? = ⌊_⌋ ∘ (FinP._≟_ id) ∘ proj₂
+              preds-merged = filter connectsC₁? (succs c₂) ++ (preds c₁)
+              succs-merged = filter connectsC₁? (preds c₂) ++ (succs c₁)
+            foldContexts : AVLn.KV → Context id → Context id
+            foldContexts (id₂ , c₂) c₁ = mergeContexts c₁ c₂
+            maybeC = AVLn.lookup id g
+            mergedC = Maybe.map (λ c → List.foldr foldContexts c filteredG) maybeC
+
+        removeContext : (id : Fin n) → AVL.Tree n → AVL.Tree n
+        removeContext id g =  filteredG
+          where
+          removeId : AVLn.KV → Maybe AVLn.KV
+          removeId (id₂ , c₂) with ⌊ id FinP.≟ id₂ ⌋
+          ... | true = nothing
+          ... | false = just (id₂ , context filtPreds (label c₂) filtSuccs)
+            where
+            filterContexts : Edge × Fin n → Bool
+            filterContexts = ⌊_⌋ ∘ (FinP._≟_ id) ∘ proj₂
+            filtPreds = filter filterContexts (preds c₂)
+            filtSuccs = filter filterContexts (succs c₂)
+          filteredG : AVLn.Tree
+          filteredG = AVLn.fromList ∘ List.gfilter removeId $ AVLn.toList g
+
+        matchImpl : Fin n → AVLn.Tree → Decomp AVL.Tree n
+        matchImpl id g with extractContext id g
+        ... | nothing = ∅
+        ... | just c = c & removeContext id g
       remove {{AVLGraph}} id g = {!!}
