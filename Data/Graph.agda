@@ -114,6 +114,15 @@ private
       insert {{AVLGraph}} {n} c g =
         AVL.insert (suc n) (fromℕ n) c (ImplMaps.mapTree suc Fin.suc g)
       reinsert {{AVLGraph}} {n} {id} c g = AVL.insert n id c g
+        where
+        module AVLn = AVL n
+        postulate higherEdges : Context id → List (Edge × Fin n) × List (Edge × Fin n)
+        postulate insertEdge : AVLn.KV → Edge → AVLn.KV
+        postulate insertEdges : AVLn.Tree → List (Edge × Fin n) → AVLn.Tree
+        postulate removeOldEdges : AVLn.Tree → AVLn.Tree
+        postulate higherG : AVLn.Tree
+        postulate lowerContext : Context id → Context id
+        postulate insertedG : AVLn.Tree
       matchAny {{AVLGraph}} {n} g with AVL.initLast n g
       ...                            | nothing = ∅
       ...                            | just (g' , (_ , c)) = c & g'
