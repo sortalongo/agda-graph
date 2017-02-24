@@ -27,6 +27,10 @@ record Context {n : ℕ} (id : Fin n) : Set ℓ where
     label : Node
     -- Outgoing edges and labels.
     succs : List (Edge × Fin n)
+module Contexts where
+  open Context
+  merge : ∀ {n} {id : Fin n} → Context id → Context id → Context id
+  merge c₁ c₂ = record c₁ { preds = (preds c₁ ++ preds c₂); succs = (succs c₁ ++ succs c₂) }
 
 infixr 3 _&_
 
@@ -55,9 +59,10 @@ record Graph (G : ℕ → Set ℓ) : Set ℓ where
     -- context is guaranteed to contain all edges in and out of that
     -- node, while the returned graph will contain none of them.
     match : ∀ {n} (a : Fin n) → G n → Decomp G n
-    -- Remove the given node from the graph, decrementing the ids
-    -- of all nodes larger than it and shrinking the graph.
-    remove : ∀ {n} (id : Fin n) → G n → G (pred n)
+    -- The id of the maximum node in the graph.
+    sucMaxId : ∀ {n} → G n → ℕ
+    -- Shrink the graph's max id to the smallest id in the graph.
+    shrink : ∀ {n} (g : G n) → G (sucMaxId g)
 
   isEmpty : ∀ {n} → G n → Bool
   isEmpty g with matchAny g
@@ -112,13 +117,29 @@ private
       AVLGraph : Graph AVL.Tree
       empty {{AVLGraph}} {n} = AVL.empty n
       insert {{AVLGraph}} {n} c g =
-        AVL.insert (suc n) (fromℕ n) c (ImplMaps.mapTree suc Fin.suc g)
+        AVL.insert (suc n) (fromℕ n) c (ImplMaps.mapTree suc Fin.inject₁ g)
       reinsert {{AVLGraph}} {n} {id} c g = AVL.insert n id c g
         where
         module AVLn = AVL n
-        postulate higherEdges : Context id → List (Edge × Fin n) × List (Edge × Fin n)
-        postulate insertEdge : AVLn.KV → Edge → AVLn.KV
+        open Context
+        higherEdges : Context id → List (Edge × Fin n) × List (Edge × Fin n)
+        higherEdges c = filter filtFn (preds c) , filter filtFn (succs c)
+          where
+          open IsStrictTotalOrder (FinOrd.isStrictTotalOrder n) using (_<?_)
+          filtFn = ⌊_⌋ ∘ (_<?_ id) ∘ proj₂
+        insertSucc : ∀ {id₂} → Context id₂ → Edge → Context id₂
+        insertSucc c e = record c { succs = (e , id) ∷ (succs c) }
+        insertPred : ∀ {id₂} → Context id₂ → Edge → Context id₂
+        insertPred c e = record c { preds = (e , id) ∷ (preds c) }
+        updateEdge : AVLn.Tree → AVLn.KV → AVLn.Tree
+        updateEdge g (id , c) = updated
+          where
+          maybeC = AVLn.lookup id g
+          update : ∀ {id₂} → AVLn.Tree → Context id₂ → AVLn.Tree
+          update {id₂} g c = AVLn.insertWith id₂ c (Contexts.merge) g
+          updated = Maybe.maybe′ (update g) g maybeC
         postulate insertEdges : AVLn.Tree → List (Edge × Fin n) → AVLn.Tree
+        --insertEdges g edges = List.foldr λ eΣ g' → 
         postulate removeOldEdges : AVLn.Tree → AVLn.Tree
         postulate higherG : AVLn.Tree
         postulate lowerContext : Context id → Context id
@@ -168,4 +189,11 @@ private
         matchImpl id g with extractContext id g
         ... | nothing = ∅
         ... | just c = c & removeContext id g
-      remove {{AVLGraph}} id g = {!!}
+      sucMaxId {{AVLGraph}} g with matchAny g
+      ... | ∅ = 0
+      ... | _&_ {_} {id} _ _ = suc $ Fin.toℕ id
+      -- To implement the below, we need to construct a proof that sucMaxId
+      -- is greater than all elements in the tree. AVL doesn't have any
+      -- convenient functions to do this, so I'm just going to leave it
+      -- unimplemented :(
+      shrink {{AVLGraph}} {n} g = {!!} 
