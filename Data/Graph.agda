@@ -1,4 +1,4 @@
-module Graph {ℓ} (Node Edge : Set ℓ) where
+module Data.Graph {ℓ} (Node Edge : Set ℓ) where
 
 open import Agda.Builtin.Bool
 open import Agda.Builtin.Nat using (_-_)
