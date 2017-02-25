@@ -118,32 +118,39 @@ private
       empty {{AVLGraph}} {n} = AVL.empty n
       insert {{AVLGraph}} {n} c g =
         AVL.insert (suc n) (fromℕ n) c (ImplMaps.mapTree suc Fin.inject₁ g)
-      reinsert {{AVLGraph}} {n} {id} c g = AVL.insert n id c g
+      reinsert {{AVLGraph}} {n} {id} c g = AVL.insert n id c-clean g-augmented
         where
         module AVLn = AVL n
         open Context
-        higherEdges : Context id → List (Edge × Fin n) × List (Edge × Fin n)
-        higherEdges c = filter filtFn (preds c) , filter filtFn (succs c)
+        open IsStrictTotalOrder (FinOrd.isStrictTotalOrder n) using (_<?_)
+        augmentingContexts : List AVLn.KV
+        augmentingContexts = predCtxts ++ succCtxts
           where
-          open IsStrictTotalOrder (FinOrd.isStrictTotalOrder n) using (_<?_)
-          filtFn = ⌊_⌋ ∘ (_<?_ id) ∘ proj₂
-        insertSucc : ∀ {id₂} → Context id₂ → Edge → Context id₂
-        insertSucc c e = record c { succs = (e , id) ∷ (succs c) }
-        insertPred : ∀ {id₂} → Context id₂ → Edge → Context id₂
-        insertPred c e = record c { preds = (e , id) ∷ (preds c) }
-        updateEdge : AVLn.Tree → AVLn.KV → AVLn.Tree
-        updateEdge g (id , c) = updated
+          predEdgeToCtxt : Edge × Fin n → Maybe AVLn.KV
+          predEdgeToCtxt (e , id-out) with ⌊ id <? id-out ⌋
+          ... | true = just (id , context [] (label c) [ (e , id) ])
+          ... | false = nothing
+          succEdgeToCtxt : Edge × Fin n → Maybe AVLn.KV
+          succEdgeToCtxt (e , id-out) with ⌊ id <? id-out ⌋
+          ... | true = just (id , context [ (e , id) ] (label c) [])
+          ... | false = nothing
+          predCtxts = List.gfilter predEdgeToCtxt (preds c)
+          succCtxts = List.gfilter succEdgeToCtxt (succs c)
+        augmentContexts : AVLn.Tree → AVLn.KV → AVLn.Tree
+        augmentContexts g (id , c) = updated
           where
           maybeC = AVLn.lookup id g
-          update : ∀ {id₂} → AVLn.Tree → Context id₂ → AVLn.Tree
-          update {id₂} g c = AVLn.insertWith id₂ c (Contexts.merge) g
+          update : ∀ {id'} → AVLn.Tree → Context id' → AVLn.Tree
+          update {id'} g c = AVLn.insertWith id' c (Contexts.merge) g
           updated = Maybe.maybe′ (update g) g maybeC
-        postulate insertEdges : AVLn.Tree → List (Edge × Fin n) → AVLn.Tree
-        --insertEdges g edges = List.foldr λ eΣ g' → 
-        postulate removeOldEdges : AVLn.Tree → AVLn.Tree
-        postulate higherG : AVLn.Tree
-        postulate lowerContext : Context id → Context id
-        postulate insertedG : AVLn.Tree
+        g-augmented : AVLn.Tree
+        g-augmented = List.foldl augmentContexts g augmentingContexts
+        c-clean : Context id
+        c-clean = context (filter filtFn (preds c))
+                          (label c)
+                          (filter filtFn (succs c))
+          where
+          filtFn =  not ∘ ⌊_⌋ ∘ (_<?_ id) ∘ proj₂
       matchAny {{AVLGraph}} {n} g with AVL.initLast n g
       ...                            | nothing = ∅
       ...                            | just (g' , (_ , c)) = c & g'
@@ -192,8 +199,9 @@ private
       sucMaxId {{AVLGraph}} g with matchAny g
       ... | ∅ = 0
       ... | _&_ {_} {id} _ _ = suc $ Fin.toℕ id
+      -- WARNING: The below is implemented incorrectly.
       -- To implement the below, we need to construct a proof that sucMaxId
       -- is greater than all elements in the tree. AVL doesn't have any
-      -- convenient functions to do this, so I'm just going to leave it
-      -- unimplemented :(
-      shrink {{AVLGraph}} {n} g = {!!} 
+      -- convenient functions to do this and this function isn't that important,
+      -- so I'm just going to leave it unimplemented :(
+      shrink {{AVLGraph}} {n} g = AVL.empty (sucMaxId g)
